@@ -1,338 +1,61 @@
-#[derive(Clone, Debug, PartialEq)]
-pub enum AgentRole {
-    Worker,
-    Coordinator,
-    Specialist,
-    Leader,
-    Mentor,
-    Learner,
-    Observer,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum RelationType {
-    Peer,
-    Mentor,
-    Student,
-    Subordinate,
-    Collaborator,
-    Competitor,
-    Stranger,
-}
-
-#[derive(Clone, Debug)]
-pub struct Agent {
-    pub id: u16,
-    pub name: String,
-    pub role: AgentRole,
-    pub reputation: f64,
-}
-
-#[derive(Clone, Debug)]
-pub struct Relation {
-    pub from_id: u16,
-    pub to_id: u16,
-    pub rel_type: RelationType,
-    pub weight: f64,
-    pub interactions: u32,
-}
-
-#[derive(Clone, Debug)]
-pub struct Group {
-    pub id: u16,
-    pub name: String,
-    pub leader_id: u16,
-    pub members: Vec<u16>,
-}
-
-pub struct SocialGraph {
-    agents: Vec<Agent>,
-    relations: Vec<Relation>,
-    groups: Vec<Group>,
-}
-
+#![allow(dead_code)]
+#[derive(Clone,Debug,PartialEq)]
+pub enum EdgeKind { Trust, Communication, Cooperation, Observation }
+pub struct Agent { id: u32, trust: f64, influence: f64, group: u8 }
+pub struct Edge { from: u32, to: u32, weight: f64, kind: EdgeKind }
+pub struct SocialGraph { agents: Vec<Agent>, edges: Vec<Edge> }
 impl SocialGraph {
-    pub fn new() -> Self {
-        SocialGraph {
-            agents: Vec::new(),
-            relations: Vec::new(),
-            groups: Vec::new(),
-        }
+    pub fn new() -> Self { Self { agents: Vec::new(), edges: Vec::new() } }
+    pub fn add_agent(&mut self, id: u32, group: u8) -> bool {
+        if self.agents.iter().any(|a| a.id == id) { return false; }
+        self.agents.push(Agent { id, trust: 0.5, influence: 0.0, group }); true
     }
-
-    pub fn add_agent(&mut self, id: u16, name: &str, role: AgentRole) {
-        self.agents.push(Agent {
-            id,
-            name: name.to_string(),
-            role,
-            reputation: 0.0,
-        });
+    pub fn remove_agent(&mut self, id: u32) { self.agents.retain(|a| a.id != id); self.edges.retain(|e| e.from != id && e.to != id); }
+    pub fn connect(&mut self, from: u32, to: u32, kind: EdgeKind, weight: f64) -> bool {
+        if !self.agents.iter().any(|a| a.id == from) || !self.agents.iter().any(|a| a.id == to) { return false; }
+        self.edges.retain(|e| !(e.from == from && e.to == to));
+        self.edges.push(Edge { from, to, weight: weight.clamp(0.0, 1.0), kind }); true
     }
-
-    pub fn find_agent(&self, id: u16) -> Option<&Agent> {
-        self.agents.iter().find(|a| a.id == id)
+    pub fn disconnect(&mut self, from: u32, to: u32) { self.edges.retain(|e| !(e.from == from && e.to == to)); }
+    pub fn trust(&self, from: u32, to: u32) -> f64 { self.edges.iter().filter(|e| e.from == from && e.to == to && e.kind == EdgeKind::Trust).map(|e| e.weight).sum() }
+    pub fn set_trust(&mut self, from: u32, to: u32, t: f64) {
+        if let Some(e) = self.edges.iter_mut().find(|e| e.from == from && e.to == to && e.kind == EdgeKind::Trust) { e.weight = t.clamp(0.0, 1.0); }
+        else { self.connect(from, to, EdgeKind::Trust, t); }
     }
-
-    pub fn set_role(&mut self, id: u16, role: AgentRole) {
-        if let Some(agent) = self.agents.iter_mut().find(|a| a.id == id) {
-            agent.role = role;
-        }
+    pub fn neighbors(&self, id: u32) -> Vec<&Agent> {
+        let nids: Vec<u32> = self.edges.iter().filter(|e| e.from == id).map(|e| e.to).collect();
+        nids.iter().filter_map(|&nid| self.agents.iter().find(|a| a.id == nid)).collect()
     }
-
-    pub fn add_relation(&mut self, from: u16, to: u16, rel_type: RelationType) {
-        if self.find_relation(from, to).is_none() {
-            self.relations.push(Relation {
-                from_id: from,
-                to_id: to,
-                rel_type,
-                weight: 1.0,
-                interactions: 0,
-            });
-        }
+    pub fn influence(&self, id: u32) -> f64 { self.edges.iter().filter(|e| e.to == id).map(|e| e.weight).sum() }
+    pub fn group_of(&self, id: u32) -> Option<u8> { self.agents.iter().find(|a| a.id == id).map(|a| a.group) }
+    pub fn group_members(&self, group: u8) -> Vec<&Agent> { self.agents.iter().filter(|a| a.group == group).collect() }
+    pub fn path(&self, from: u32, to: u32) -> Vec<u32> {
+        let mut visited = std::collections::HashSet::new(); let mut queue = std::collections::VecDeque::new();
+        queue.push_back((from, vec![from])); visited.insert(from);
+        while let Some((cur, path)) = queue.pop_front() { for e in &self.edges { if e.from == cur && !visited.contains(&e.to) {
+            let mut np = path.clone(); np.push(e.to);
+            if e.to == to { return np; } visited.insert(e.to); queue.push_back((e.to, np));
+        }}} vec![]
     }
-
-    pub fn find_relation(&self, from: u16, to: u16) -> Option<&Relation> {
-        self.relations.iter().find(|r| r.from_id == from && r.to_id == to)
-    }
-
-    pub fn neighbors(&self, id: u16) -> Vec<u16> {
-        let mut ids: Vec<u16> = self.relations
-            .iter()
-            .filter_map(|r| {
-                if r.from_id == id {
-                    Some(r.to_id)
-                } else if r.to_id == id {
-                    Some(r.from_id)
-                } else {
-                    None
-                }
-            })
-            .collect();
-        ids.sort_unstable();
-        ids.dedup();
-        ids
-    }
-
-    pub fn centrality(&self, id: u16) -> f64 {
-        let n = self.agents.len();
-        if n <= 1 {
-            return 0.0;
-        }
-        let degree = self.neighbors(id).len() as f64;
-        degree / (n - 1) as f64
-    }
-
-    pub fn create_group(&mut self, name: &str, leader: u16) -> u16 {
-        let id = self.groups.len() as u16;
-        let mut members = vec![leader];
-        members.sort_unstable();
-        members.dedup();
-        self.groups.push(Group {
-            id,
-            name: name.to_string(),
-            leader_id: leader,
-            members,
-        });
-        id
-    }
-
-    pub fn join_group(&mut self, group_id: u16, agent_id: u16) {
-        if let Some(group) = self.groups.iter_mut().find(|g| g.id == group_id) {
-            if !group.members.contains(&agent_id) {
-                group.members.push(agent_id);
-                group.members.sort_unstable();
-            }
-        }
-    }
-
-    pub fn group_members(&self, group_id: u16) -> Vec<&Agent> {
-        let mut result = Vec::new();
-        if let Some(group) = self.groups.iter().find(|g| g.id == group_id) {
-            for &mid in &group.members {
-                if let Some(agent) = self.find_agent(mid) {
-                    result.push(agent);
-                }
-            }
-        }
-        result
-    }
-
-    pub fn agent_count(&self) -> usize {
-        self.agents.len()
-    }
+    pub fn degree(&self, id: u32) -> usize { self.edges.iter().filter(|e| e.from == id || e.to == id).count() }
+    pub fn decay(&mut self, rate: f64) { for e in &mut self.edges { e.weight = (e.weight * (1.0 - rate)).max(0.0); } }
+    pub fn agent_count(&self) -> usize { self.agents.len() }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn make_graph() -> SocialGraph {
-        let mut g = SocialGraph::new();
-        g.add_agent(1, "Alice", AgentRole::Leader);
-        g.add_agent(2, "Bob", AgentRole::Worker);
-        g.add_agent(3, "Carol", AgentRole::Specialist);
-        g.add_relation(1, 2, RelationType::Subordinate);
-        g.add_relation(1, 3, RelationType::Collaborator);
-        g.add_relation(2, 3, RelationType::Peer);
-        g
-    }
-
-    #[test]
-    fn test_new_graph_empty() {
-        let g = SocialGraph::new();
-        assert_eq!(g.agent_count(), 0);
-    }
-
-    #[test]
-    fn test_add_agent() {
-        let mut g = SocialGraph::new();
-        g.add_agent(1, "Alice", AgentRole::Leader);
-        assert_eq!(g.agent_count(), 1);
-    }
-
-    #[test]
-    fn test_find_agent_exists() {
-        let g = make_graph();
-        let a = g.find_agent(1).unwrap();
-        assert_eq!(a.name, "Alice");
-        assert_eq!(a.role, AgentRole::Leader);
-    }
-
-    #[test]
-    fn test_find_agent_missing() {
-        let g = make_graph();
-        assert!(g.find_agent(99).is_none());
-    }
-
-    #[test]
-    fn test_set_role() {
-        let mut g = make_graph();
-        g.set_role(2, AgentRole::Coordinator);
-        assert_eq!(g.find_agent(2).unwrap().role, AgentRole::Coordinator);
-    }
-
-    #[test]
-    fn test_set_role_missing_id() {
-        let mut g = make_graph();
-        g.set_role(99, AgentRole::Mentor); // should not panic
-    }
-
-    #[test]
-    fn test_add_relation() {
-        let mut g = SocialGraph::new();
-        g.add_agent(1, "A", AgentRole::Worker);
-        g.add_agent(2, "B", AgentRole::Worker);
-        g.add_relation(1, 2, RelationType::Peer);
-        let r = g.find_relation(1, 2).unwrap();
-        assert_eq!(r.rel_type, RelationType::Peer);
-        assert_eq!(r.weight, 1.0);
-        assert_eq!(r.interactions, 0);
-    }
-
-    #[test]
-    fn test_add_relation_idempotent() {
-        let mut g = SocialGraph::new();
-        g.add_agent(1, "A", AgentRole::Worker);
-        g.add_agent(2, "B", AgentRole::Worker);
-        g.add_relation(1, 2, RelationType::Peer);
-        g.add_relation(1, 2, RelationType::Competitor); // should be ignored
-        let r = g.find_relation(1, 2).unwrap();
-        assert_eq!(r.rel_type, RelationType::Peer);
-    }
-
-    #[test]
-    fn test_find_relation_missing() {
-        let g = make_graph();
-        assert!(g.find_relation(1, 99).is_none());
-    }
-
-    #[test]
-    fn test_neighbors() {
-        let g = make_graph();
-        let mut n = g.neighbors(1);
-        n.sort();
-        assert_eq!(n, vec![2, 3]);
-    }
-
-    #[test]
-    fn test_neighbors_dedup() {
-        let g = make_graph();
-        // 1->2 exists, no reverse; test dedup path
-        let n = g.neighbors(2);
-        assert_eq!(n.len(), 2); // 1 and 3
-    }
-
-    #[test]
-    fn test_neighbors_empty() {
-        let mut g = SocialGraph::new();
-        g.add_agent(1, "Loner", AgentRole::Observer);
-        let n = g.neighbors(1);
-        assert!(n.is_empty());
-    }
-
-    #[test]
-    fn test_centrality() {
-        let g = make_graph();
-        // 3 agents, agent 1 has degree 2, centrality = 2/(3-1) = 1.0
-        assert!((g.centrality(1) - 1.0).abs() < f64::EPSILON);
-        // agent 2: neighbors [1,3] -> degree 2 -> 1.0
-        assert!((g.centrality(2) - 1.0).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn test_centrality_single_agent() {
-        let mut g = SocialGraph::new();
-        g.add_agent(1, "Solo", AgentRole::Observer);
-        assert!((g.centrality(1)).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn test_create_group() {
-        let mut g = make_graph();
-        let gid = g.create_group("Alpha", 1);
-        assert_eq!(gid, 0);
-        let members = g.group_members(gid);
-        assert_eq!(members.len(), 1);
-        assert_eq!(members[0].name, "Alice");
-    }
-
-    #[test]
-    fn test_join_group() {
-        let mut g = make_graph();
-        let gid = g.create_group("Alpha", 1);
-        g.join_group(gid, 2);
-        let members = g.group_members(gid);
-        assert_eq!(members.len(), 2);
-    }
-
-    #[test]
-    fn test_join_group_idempotent() {
-        let mut g = make_graph();
-        let gid = g.create_group("Alpha", 1);
-        g.join_group(gid, 1);
-        assert_eq!(g.group_members(gid).len(), 1);
-    }
-
-    #[test]
-    fn test_group_members_sorted_by_id() {
-        let mut g = make_graph();
-        let gid = g.create_group("Alpha", 3);
-        g.join_group(gid, 1);
-        g.join_group(gid, 2);
-        let members = g.group_members(gid);
-        let ids: Vec<u16> = members.iter().map(|a| a.id).collect();
-        assert_eq!(ids, vec![1, 2, 3]);
-    }
-
-    #[test]
-    fn test_agent_count() {
-        let g = make_graph();
-        assert_eq!(g.agent_count(), 3);
-    }
-
-    #[test]
-    fn test_agent_default_reputation() {
-        let g = make_graph();
-        assert!((g.find_agent(1).unwrap().reputation - 0.0).abs() < f64::EPSILON);
-    }
+    #[test] fn test_new() { let g = SocialGraph::new(); assert_eq!(g.agent_count(), 0); }
+    #[test] fn test_add_agent() { let mut g = SocialGraph::new(); assert!(g.add_agent(1, 0)); assert!(!g.add_agent(1, 0)); }
+    #[test] fn test_connect() { let mut g = SocialGraph::new(); g.add_agent(1, 0); g.add_agent(2, 0); assert!(g.connect(1, 2, EdgeKind::Trust, 0.8)); }
+    #[test] fn test_trust() { let mut g = SocialGraph::new(); g.add_agent(1, 0); g.add_agent(2, 0); g.connect(1, 2, EdgeKind::Trust, 0.8); assert!((g.trust(1, 2) - 0.8).abs() < 1e-6); }
+    #[test] fn test_set_trust() { let mut g = SocialGraph::new(); g.add_agent(1, 0); g.add_agent(2, 0); g.set_trust(1, 2, 0.9); assert!((g.trust(1, 2) - 0.9).abs() < 1e-6); }
+    #[test] fn test_neighbors() { let mut g = SocialGraph::new(); g.add_agent(1, 0); g.add_agent(2, 0); g.add_agent(3, 0); g.connect(1, 2, EdgeKind::Trust, 0.5); g.connect(1, 3, EdgeKind::Trust, 0.5); assert_eq!(g.neighbors(1).len(), 2); }
+    #[test] fn test_influence() { let mut g = SocialGraph::new(); g.add_agent(1, 0); g.add_agent(2, 0); g.connect(1, 2, EdgeKind::Trust, 0.8); assert!((g.influence(2) - 0.8).abs() < 1e-6); }
+    #[test] fn test_path() { let mut g = SocialGraph::new(); for i in 1..=3 { g.add_agent(i, 0); } g.connect(1, 2, EdgeKind::Communication, 0.5); g.connect(2, 3, EdgeKind::Communication, 0.5); assert_eq!(g.path(1, 3), vec![1, 2, 3]); }
+    #[test] fn test_disconnect() { let mut g = SocialGraph::new(); g.add_agent(1, 0); g.add_agent(2, 0); g.connect(1, 2, EdgeKind::Trust, 0.5); g.disconnect(1, 2); assert!((g.trust(1, 2)).abs() < 1e-6); }
+    #[test] fn test_group() { let mut g = SocialGraph::new(); g.add_agent(1, 1); g.add_agent(2, 2); assert_eq!(g.group_members(1).len(), 1); }
+    #[test] fn test_degree() { let mut g = SocialGraph::new(); g.add_agent(1, 0); g.add_agent(2, 0); g.connect(1, 2, EdgeKind::Trust, 0.5); assert_eq!(g.degree(1), 1); }
+    #[test] fn test_decay() { let mut g = SocialGraph::new(); g.add_agent(1, 0); g.add_agent(2, 0); g.connect(1, 2, EdgeKind::Trust, 0.8); g.decay(0.5); assert!(g.trust(1, 2) < 0.8); }
+    #[test] fn test_remove_agent() { let mut g = SocialGraph::new(); g.add_agent(1, 0); g.add_agent(2, 0); g.connect(1, 2, EdgeKind::Trust, 0.5); g.remove_agent(1); assert_eq!(g.agent_count(), 1); assert_eq!(g.edges.len(), 0); }
 }
