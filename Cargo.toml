@@ -2,3 +2,7 @@
 name = "flux-social"
 version = "0.1.0"
 edition = "2021"
+description = "Social graph with trust and influence — how agents form relationships"
+
+[dependencies]
+rand = "0.8"
