@@ -2,6 +2,9 @@
 name = "flux-social"
 version = "0.1.0"
 edition = "2021"
+homepage = "https://github.com/Lucineer"
+repository = "https://github.com/Lucineer/flux-social"
+license = "MIT OR Apache-2.0"
 description = "Social graph with trust and influence — how agents form relationships"
 
 [dependencies]
