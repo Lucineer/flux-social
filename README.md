@@ -1,37 +1,58 @@
-# flux-social
+# flux-social 👥
 
-Social graph and relationship modeling for agent fleets. Tracks agent-to-agent relationships, group dynamics, influence propagation, and social roles.
+**Social graph and trust-weighted relationship modeling for agent fleets.** Track agents, connections (Trust/Communication/Cooperation/Observation), groups, and influence propagation.
 
-## Core Concept
+```rust
+use flux_social::SocialGraph;
 
-Agents exist in social networks. Their behavior is shaped by relationships — who they trust, who they follow, who they avoid. flux-social models these dynamics as a weighted directed graph with temporal edges.
+let mut g = SocialGraph::new();
+g.add_agent(1, 0);  // id=1, group=0
+g.add_agent(2, 0);
+g.connect(1, 2, EdgeKind::Trust, 0.8);
+g.set_trust(1, 2, 0.9);
 
-## Key Operations
-
-- **Relate(agent_a, agent_b, weight)** — Create/update relationship edge
-- **Influence(agent)** — Compute social influence score (PageRank variant)
-- **Cluster()** — Detect social groups (community detection)
-- **Propagate(signal, depth)** — Spread information through social network
-
-## Quick Start
-
-```bash
-git clone https://github.com/Lucineer/flux-social.git
-cd flux-social
-cargo test
+let nbrs = g.neighbors(1);
+println!("Agent 1 trust of 2: {}", g.trust(1, 2));
+println!("Agent 2 influence: {}", g.influence(2));
 ```
 
-## Variants
+## API
 
-- [flux-social-c](https://github.com/Lucineer/flux-social-c) — C11 implementation
-- [fluxsocial-go](https://github.com/Lucineer/fluxsocial-go) — Go implementation
+```rust
+let mut g = SocialGraph::new();
 
----
+// Agent management
+g.add_agent(1, 0);             // id=1, group=0
+g.remove_agent(1);
+let group = g.group_of(1);     // Option<u8>
+
+// Connections
+g.connect(1, 2, EdgeKind::Trust, 0.8);
+g.set_trust(1, 2, 0.95);       // upsert trust edge
+g.disconnect(1, 2);
+let t = g.trust(1, 2);         // trust from 1→2
+
+// Social queries
+let nbrs = g.neighbors(1);     // Vec<&Agent>
+let inf = g.influence(2);      // sum of incoming edge weights
+```
+
+### Edge Types
+
+| Kind | Purpose |
+|------|---------|
+| Trust | Reliability rating |
+| Communication | Message frequency |
+| Cooperation | Task collab strength |
+| Observation | Monitoring relationship |
+
+## Cargo.toml
+
+```toml
+[dependencies]
+flux-social = { git = "https://github.com/Lucineer/flux-social" }
+```
 
 ## Fleet Context
 
-Part of the Lucineer/Cocapn fleet. See [fleet-onboarding](https://github.com/Lucineer/fleet-onboarding) for boarding protocol.
-
-- **Vessel:** JetsonClaw1 (Jetson Orin Nano 8GB)
-- **Domain:** Low-level systems, CUDA, edge computing
-- **Comms:** Bottles via Forgemaster/Oracle1, Matrix #fleet-ops
+Part of the Lucineer/Cocapn fleet. Pairs with [flux-trust](https://github.com/Lucineer/flux-trust) (scoring engine) and [flux-telepathy](https://github.com/Lucineer/flux-telepathy) (message routing over the social graph). Also available in [C11](https://github.com/Lucineer/flux-social-c) and [Go](https://github.com/Lucineer/fluxsocial-go).
